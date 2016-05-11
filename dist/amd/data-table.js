@@ -1,4 +1,4 @@
-define(['exports', 'aurelia-framework'], function (exports, _aureliaFramework) {
+define(['exports', 'aurelia-framework', 'aurelia-router', 'json-statham'], function (exports, _aureliaFramework, _aureliaRouter, _jsonStatham) {
   'use strict';
 
   Object.defineProperty(exports, "__esModule", {
@@ -73,10 +73,10 @@ define(['exports', 'aurelia-framework'], function (exports, _aureliaFramework) {
     throw new Error('Decorating class property failed. Please ensure that transform-class-properties is enabled.');
   }
 
-  var _dec, _dec2, _dec3, _class, _desc, _value, _class2, _descriptor, _descriptor2, _descriptor3, _descriptor4, _descriptor5, _descriptor6, _descriptor7, _descriptor8;
+  var _dec, _dec2, _dec3, _class, _desc, _value, _class2, _descriptor, _descriptor2, _descriptor3, _descriptor4, _descriptor5, _descriptor6, _descriptor7, _descriptor8, _descriptor9, _descriptor10;
 
-  var DataTable = exports.DataTable = (_dec = (0, _aureliaFramework.customElement)('data-table'), _dec2 = (0, _aureliaFramework.inject)(Element), _dec3 = (0, _aureliaFramework.computedFrom)('columns'), _dec(_class = _dec2(_class = (_class2 = function () {
-    function DataTable(element) {
+  var DataTable = exports.DataTable = (_dec = (0, _aureliaFramework.customElement)('data-table'), _dec2 = (0, _aureliaFramework.inject)(_aureliaRouter.Router, Element), _dec3 = (0, _aureliaFramework.computedFrom)('columns'), _dec(_class = _dec2(_class = (_class2 = function () {
+    function DataTable(Router, element) {
       _classCallCheck(this, DataTable);
 
       _initDefineProp(this, 'repository', _descriptor, this);
@@ -89,58 +89,112 @@ define(['exports', 'aurelia-framework'], function (exports, _aureliaFramework) {
 
       _initDefineProp(this, 'sortable', _descriptor5, this);
 
-      _initDefineProp(this, 'editable', _descriptor6, this);
+      _initDefineProp(this, 'update', _descriptor6, this);
 
-      _initDefineProp(this, 'removable', _descriptor7, this);
+      _initDefineProp(this, 'destroy', _descriptor7, this);
 
-      _initDefineProp(this, 'data', _descriptor8, this);
+      _initDefineProp(this, 'select', _descriptor8, this);
 
+      _initDefineProp(this, 'data', _descriptor9, this);
+
+      _initDefineProp(this, 'route', _descriptor10, this);
+
+      this.count = 0;
       this.columnsArray = [];
       this.sortingCriteria = {};
       this.searchCriteria = {};
 
+      this.router = Router;
       this.element = element;
     }
 
     DataTable.prototype.attached = function attached() {
-      this.sortable = this.sortable === 'false' ? false : true;
-      this.searchable = this.searchable === 'false' ? false : true;
-      this.editable = this.editable === 'false' ? false : true;
-      this.removable = this.removable === 'false' ? false : true;
       return this.load();
     };
 
     DataTable.prototype.load = function load() {
-      return this.data;
+      var _this = this;
+
+      this.updateRecordCount();
+      var criteria = this.buildCriteria();
+      this.repository.find(criteria, true).then(function (result) {
+        _this.data = result;
+      }).catch(function (error) {
+        console.error('Something went wrong.', error);
+      });
+    };
+
+    DataTable.prototype.buildCriteria = function buildCriteria() {
+      var criteria = {};
+
+      if (this.searchable !== null && Object.keys(this.searchCriteria).length) {
+        var propertyName = Object.keys(this.searchCriteria)[0];
+        if (this.searchCriteria[propertyName]) {
+          criteria['where'] = {};
+          criteria['where'][propertyName] = {};
+          criteria['where'][propertyName]['contains'] = this.searchCriteria[propertyName];
+        }
+      }
+      if (this.sortable !== null && Object.keys(this.sortingCriteria).length) {
+        var _propertyName = Object.keys(this.sortingCriteria)[0];
+        if (this.sortingCriteria[_propertyName]) {
+          criteria['sort'] = _propertyName + ' ' + this.sortingCriteria[_propertyName];
+        }
+      }
+      return criteria;
     };
 
     DataTable.prototype.populate = function populate(row) {
       return this.repository.getPopulatedEntity(row);
     };
 
-    DataTable.prototype.doDelete = function doDelete(index) {
-      this.data.splice(index, 1);
+    DataTable.prototype.doDelete = function doDelete(row) {
+      var _this2 = this;
+
+      if (typeof this.delete === 'function') {
+        return this.delete(this.populate(row));
+      }
+
+      this.populate(row).destroy().then(function (ah) {
+        _this2.load();
+        _this2.triggerEvent('deleted', row);
+      }).catch(function (error) {
+        _this2.triggerEvent('exception', { on: 'delete', error: error });
+      });
     };
 
-    DataTable.prototype.doUpdate = function doUpdate(row) {};
+    DataTable.prototype.doUpdate = function doUpdate(row) {
+      var _this3 = this;
+
+      if (typeof this.update === 'function') {
+        return this.update(this.populate(row));
+      }
+
+      this.populate(row).update().then(function () {
+        _this3.load();
+        _this3.triggerEvent('updated', row);
+      }).catch(function (error) {
+        _this3.triggerEvent('exception', { on: 'update', error: error });
+      });
+    };
 
     DataTable.prototype.doSort = function doSort(columnLabel) {
-      if (!this.sortable) {
+      if (this.sortable === null || this.isObject(columnLabel.column)) {
         return;
       }
 
       if (this.sortingCriteria[columnLabel.column]) {
-        this.sortingCriteria[columnLabel.column] = this.sortingCriteria[columnLabel.column] === 'desc' ? 'asc' : 'desc';
+        this.sortingCriteria[columnLabel.column] = this.sortingCriteria[columnLabel.column] === 'asc' ? 'desc' : 'asc';
       } else {
         this.sortingCriteria = {};
-        this.sortingCriteria[columnLabel.column] = 'desc';
+        this.sortingCriteria[columnLabel.column] = 'asc';
       }
-      console.log(this.sortingCriteria);
-      console.log('HEYYEYYEYE', columnLabel);
+
+      this.load();
     };
 
     DataTable.prototype.doSearch = function doSearch(searchInput) {
-      if (!this.searchable) {
+      if (this.searchable === null) {
         return;
       }
 
@@ -148,6 +202,7 @@ define(['exports', 'aurelia-framework'], function (exports, _aureliaFramework) {
         this.searchCriteria = {};
       }
       this.searchCriteria[this.defaultColumn] = searchInput;
+      this.load();
     };
 
     DataTable.prototype.checkDefaultColumn = function checkDefaultColumn() {
@@ -156,6 +211,47 @@ define(['exports', 'aurelia-framework'], function (exports, _aureliaFramework) {
       if (!this.defaultColumn || this.defaultColumn && this.columnsArray.indexOf(this.defaultColumn) === -1) {
         this.defaultColumn = hasNameColumn ? 'name' : this.columnsArray[0] || null;
       }
+    };
+
+    DataTable.prototype.triggerEvent = function triggerEvent(event) {
+      var payload = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
+
+      payload.bubbles = true;
+      return this.element.dispatchEvent(new CustomEvent(event, payload));
+    };
+
+    DataTable.prototype.destroyRow = function destroyRow(id) {
+      return this.element.dispatchEvent(new CustomEvent('destroyed', this.data.asObject()));
+    };
+
+    DataTable.prototype.populate = function populate(row) {
+      return this.repository.getPopulatedEntity(row);
+    };
+
+    DataTable.prototype.selected = function selected(row) {
+      if (this.select) {
+        return this.select(this.repository.getPopulatedEntity(row));
+      }
+
+      return this.navigateTo(row.id);
+    };
+
+    DataTable.prototype.navigateTo = function navigateTo(id) {
+      this.router.navigateToRoute(this.route, { id: id });
+    };
+
+    DataTable.prototype.updateRecordCount = function updateRecordCount() {};
+
+    DataTable.prototype.displayValue = function displayValue(row, propertyName) {
+      if (row[propertyName]) {
+        return row[propertyName];
+      }
+      var statham = new _jsonStatham.Statham(row, _jsonStatham.Statham.MODE_NESTED);
+      return statham.fetch(propertyName);
+    };
+
+    DataTable.prototype.isObject = function isObject(columnName) {
+      return columnName.indexOf('.') !== -1;
     };
 
     _createClass(DataTable, [{
@@ -211,24 +307,30 @@ define(['exports', 'aurelia-framework'], function (exports, _aureliaFramework) {
   }), _descriptor4 = _applyDecoratedDescriptor(_class2.prototype, 'searchable', [_aureliaFramework.bindable], {
     enumerable: true,
     initializer: function initializer() {
-      return true;
+      return null;
     }
   }), _descriptor5 = _applyDecoratedDescriptor(_class2.prototype, 'sortable', [_aureliaFramework.bindable], {
     enumerable: true,
     initializer: function initializer() {
-      return true;
+      return null;
     }
-  }), _descriptor6 = _applyDecoratedDescriptor(_class2.prototype, 'editable', [_aureliaFramework.bindable], {
+  }), _descriptor6 = _applyDecoratedDescriptor(_class2.prototype, 'update', [_aureliaFramework.bindable], {
     enumerable: true,
     initializer: function initializer() {
-      return true;
+      return null;
     }
-  }), _descriptor7 = _applyDecoratedDescriptor(_class2.prototype, 'removable', [_aureliaFramework.bindable], {
+  }), _descriptor7 = _applyDecoratedDescriptor(_class2.prototype, 'destroy', [_aureliaFramework.bindable], {
     enumerable: true,
     initializer: function initializer() {
-      return true;
+      return null;
     }
-  }), _descriptor8 = _applyDecoratedDescriptor(_class2.prototype, 'data', [_aureliaFramework.bindable], {
+  }), _descriptor8 = _applyDecoratedDescriptor(_class2.prototype, 'select', [_aureliaFramework.bindable], {
+    enumerable: true,
+    initializer: null
+  }), _descriptor9 = _applyDecoratedDescriptor(_class2.prototype, 'data', [_aureliaFramework.bindable], {
+    enumerable: true,
+    initializer: null
+  }), _descriptor10 = _applyDecoratedDescriptor(_class2.prototype, 'route', [_aureliaFramework.bindable], {
     enumerable: true,
     initializer: null
   }), _applyDecoratedDescriptor(_class2.prototype, 'columnLabels', [_dec3], Object.getOwnPropertyDescriptor(_class2.prototype, 'columnLabels'), _class2.prototype)), _class2)) || _class) || _class);

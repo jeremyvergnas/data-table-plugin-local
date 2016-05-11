@@ -1,112 +1,133 @@
-import {inject, customElement, bindable, computedFrom} from 'aurelia-framework';
+import {bindable, inject, computedFrom, customElement} from 'aurelia-framework';
+import {Router} from 'aurelia-router';
+import {Statham} from 'json-statham';
 
 @customElement('data-table')
-@inject(Element)
+@inject(Router, Element)
 export class DataTable {
   @bindable repository;
-  // String representing the olumn names
+  // String representing the column names
   @bindable columns = '';
   // Column used by default for search
   @bindable defaultColumn;
   // Show the search field? (Optional attribut)
-  @bindable searchable = true;
+  @bindable searchable = null;
   // Columns can be sorted? (Optional attribut)
-  @bindable sortable = true;
+  @bindable sortable = null;
   // Rows are editable? (Optional attribut)
-  @bindable editable = true;
+  @bindable update = null;
   // Rows are removable? (Optional attribut)
-  @bindable removable = true;
+  @bindable destroy = null;
+  // Rows are selactable? (Optional attribut)
+  @bindable select;
   @bindable data;
+  @bindable route;
 
+  count = 0;
   columnsArray = [];
   sortingCriteria = {};
   searchCriteria = {}
 
-  constructor(element) {
-    // console.log(element);
+  constructor(Router, element) {
+    this.router  = Router;
     this.element = element;
   }
 
   attached() {
-    this.sortable = (this.sortable === 'false' ? false : true);
-    this.searchable = (this.searchable === 'false' ? false : true);
-    this.editable = (this.editable === 'false' ? false : true);
-    this.removable = (this.removable === 'false' ? false : true);
     return this.load();
   }
 
   load() {
-    // *********ORM********
-    // let criteria = {};
-    // if (this.searchable ) {
-    //   this.searchCriteria
-    // }
-    // if (this.sortable ) {
-    //   this.sortingCriteria
-    // }
-    // this.repository.find(criteria, true).then(result => {
-    //  this.data = result;
-    // })
-    // .catch(error => {
-    //   console.error('Something went wrong.', error);
-    // });
-    return this.data;
+    this.updateRecordCount();
+    let criteria = this.buildCriteria();
+    this.repository.find(criteria, true).then(result => {
+     this.data = result;
+    })
+    .catch(error => {
+      console.error('Something went wrong.', error);
+    });
+  }
+
+  buildCriteria() {
+    let criteria = {};
+
+    if (this.searchable !== null && Object.keys(this.searchCriteria).length ) {
+      let propertyName = Object.keys(this.searchCriteria)[0];
+      if (this.searchCriteria[propertyName]) {
+        criteria['where'] = {};
+        criteria['where'][propertyName] = {};
+        criteria['where'][propertyName]['contains'] = this.searchCriteria[propertyName];
+      }
+    }
+    if (this.sortable !== null && Object.keys(this.sortingCriteria).length ) {
+      let propertyName = Object.keys(this.sortingCriteria)[0];
+      if (this.sortingCriteria[propertyName]) {
+        criteria['sort'] = propertyName + ' ' + this.sortingCriteria[propertyName];
+      }
+    }
+    return criteria;
   }
 
   populate (row) {
     return this.repository.getPopulatedEntity(row);
   }
 
-  doDelete(index) {
-    // *********ORM********
-    // this.populate(row).destroy()
-    //   .then(() => {
-    //   this.load();
-    //   this.triggerEvent('deleted', row);
-    // })
-    // .catch(error => {
-    //     this.triggerEvent('exception', {on: 'delete', error: error});
-    // });
-    this.data.splice(index, 1);
+  doDelete(row) {
+    if (typeof this.delete === 'function') {
+      return this.delete(this.populate(row));
+    }
+
+    this.populate(row).destroy()
+      .then(ah => {
+      this.load();
+      this.triggerEvent('deleted', row);
+    })
+    .catch(error => {
+      this.triggerEvent('exception', {on: 'delete', error: error});
+    });
   }
 
   doUpdate (row) {
-    // *********ORM********
-    // this.populate(row).update()
-    //   .then(() => {
-    //   this.load();
-    //   this.triggerEvent('updated', row);
-    // })
-    // .catch(error => {
-    //     this.triggerEvent('exception', {on: 'update', error: error});
-    // });
+    if (typeof this.update === 'function') {
+      return this.update(this.populate(row));
+    }
+
+    this.populate(row).update()
+      .then(() => {
+      this.load();
+      this.triggerEvent('updated', row);
+    })
+    .catch(error => {
+      this.triggerEvent('exception', {on: 'update', error: error});
+    });
   }
 
   doSort(columnLabel) {
-    if (!this.sortable) {
+    if (this.sortable === null || this.isObject(columnLabel.column)) {
       return;
     }
 
     if (this.sortingCriteria[columnLabel.column]) {
-      this.sortingCriteria[columnLabel.column] = (this.sortingCriteria[columnLabel.column] === 'desc' ? 'asc' : 'desc');
+      this.sortingCriteria[columnLabel.column] = (this.sortingCriteria[columnLabel.column] === 'asc' ? 'desc' : 'asc');
     }
     else {
       this.sortingCriteria = {};
-      this.sortingCriteria[columnLabel.column] = 'desc';
+      this.sortingCriteria[columnLabel.column] = 'asc';
     }
-    console.log(this.sortingCriteria);
-    console.log('HEYYEYYEYE', columnLabel);
+
+    this.load();
   }
 
   doSearch(searchInput) {
-    if (!this.searchable) {
+    if (this.searchable === null) {
       return;
     }
 
     if (!(this.defaultColumn in this.searchCriteria)) {
       this.searchCriteria = {};
     }
-    this.searchCriteria[this.defaultColumn] = searchInput
+    this.searchCriteria[this.defaultColumn] = searchInput;
+    this.load();
   }
 
   @computedFrom('columns')
@@ -151,5 +172,48 @@ export class DataTable {
     if (!this.defaultColumn || (this.defaultColumn && this.columnsArray.indexOf(this.defaultColumn) === -1)) {
       this.defaultColumn = (hasNameColumn ? 'name' : (this.columnsArray[0] || null));
     }
+  }
+
+  triggerEvent (event, payload = {}) {
+    payload.bubbles = true;
+    return this.element.dispatchEvent(new CustomEvent(event, payload));
+  }
+
+  destroyRow (id) {
+    return this.element.dispatchEvent(new CustomEvent('destroyed', this.data.asObject()));
+  }
+
+  populate (row) {
+    return this.repository.getPopulatedEntity(row);
+  }
+
+  selected (row) {
+    if (this.select) {
+      return this.select(this.repository.getPopulatedEntity(row));
+    }
+
+    return this.navigateTo(row.id);
+  }
+
+  navigateTo (id) {
+    this.router.navigateToRoute(this.route, {id: id});
+  }
+
+  updateRecordCount () {
+    // this.repository.count()
+    //   .then(res => this.count = res.count)
+    // .catch(res => console.error(res));
+  }
+
+  displayValue (row, propertyName) {
+    if (row[propertyName]) {
+      return row[propertyName];
+    }
+    let statham = new Statham(row, Statham.MODE_NESTED);
+    return statham.fetch(propertyName);
+  }
+
+  isObject (columnName) {
+    return (columnName.indexOf('.') !== -1);
   }
 }
